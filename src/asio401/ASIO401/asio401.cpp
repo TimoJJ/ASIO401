@@ -253,17 +253,18 @@ namespace asio401 {
 			ConvertASIOBufferEndianness(bufferInfos, false, doubleBufferIndex, bufferSizeInFrames, sampleSizeInBytes, deviceSampleEndianness);
 		}
 
-		void PostProcessASIOInputBuffers(const std::vector<ASIOBufferInfo>& bufferInfos, const long doubleBufferIndex, const size_t bufferSizeInFrames, const size_t sampleSizeInBytes, ::dechamps_cpputil::Endianness deviceSampleEndianness) {
-			ConvertASIOBufferEndianness(bufferInfos, true, doubleBufferIndex, bufferSizeInFrames, sampleSizeInBytes, deviceSampleEndianness);
 
-			for (const auto& bufferInfo : bufferInfos) {
-				if (!bufferInfo.isInput) continue;
+    void PostProcessASIOInputBuffers(const std::vector<ASIOBufferInfo>& bufferInfos, const long doubleBufferIndex, const size_t bufferSizeInFrames, const size_t sampleSizeInBytes, ::dechamps_cpputil::Endianness deviceSampleEndianness, const bool invertPolarity) {
+      ConvertASIOBufferEndianness(bufferInfos, true, doubleBufferIndex, bufferSizeInFrames, sampleSizeInBytes, deviceSampleEndianness);
 
-				// Invert polarity of the right input channel. See https://github.com/dechamps/ASIO401/issues/14
-				if (bufferInfo.channelNum == 1) NegateIntegerBuffer(static_cast<NativeSampleType*>(bufferInfo.buffers[doubleBufferIndex]), bufferSizeInFrames);
-			}
-		}
+      for (const auto& bufferInfo : bufferInfos) {
+        if (!bufferInfo.isInput) continue;
 
+        // Invert polarity of the right input channel (QA401 only).
+        if (invertPolarity && bufferInfo.channelNum == 1)
+          NegateIntegerBuffer(static_cast<NativeSampleType*>(bufferInfo.buffers[doubleBufferIndex]), bufferSizeInFrames);
+      }
+    }
 	}
 
 	ASIO401::Device ASIO401::GetDevice() {
@@ -832,7 +833,18 @@ namespace asio401 {
 						preparedState.asio401.GetDeviceSampleSizeInBytes(),
 						swapChannels);
 					startReceiving();
-					PostProcessASIOInputBuffers(preparedState.bufferInfos, asioBufferIndex, preparedState.buffers.bufferSizeInFrames, preparedState.asio401.GetDeviceSampleSizeInBytes(), preparedState.asio401.GetDeviceSampleEndianness());
+          const bool invertInputPolarity = preparedState.asio401.WithDevice(
+              [&](const QA401&) { return true; },
+              [&](const QA403&) { return false; }
+          );
+          PostProcessASIOInputBuffers(
+              preparedState.bufferInfos,
+              asioBufferIndex,
+              preparedState.buffers.bufferSizeInFrames,
+              preparedState.asio401.GetDeviceSampleSizeInBytes(),
+              preparedState.asio401.GetDeviceSampleEndianness(),
+              invertInputPolarity
+          );
 					recordedFirstBuffer = true;
 				};
 
